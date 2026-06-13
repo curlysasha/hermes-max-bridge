@@ -1,0 +1,16 @@
+{
+  "phone": "+7XXXXXXXXXX",
+  "session_name": "session.db",
+
+  "owner_telegram_chat_id": "",
+  "_owner_note": "Куда слать уведомления. Пусто = взять TELEGRAM_HOME_CHANNEL из .env Гермеса.",
+
+  "control_host": "127.0.0.1",
+  "control_port": 8787,
+
+  "ignore_senders": [543835],
+  "_ignore_note": "543835 — официальный системный аккаунт MAX (логин-алерты, реклама). Добавляй сюда id шумных отправителей.",
+
+  "notify_groups": false,
+  "_notify_groups_note": "false = уведомлять только о личных диалогах; true = и о группах/каналах тоже."
+}

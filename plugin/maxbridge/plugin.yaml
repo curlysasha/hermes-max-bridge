@@ -1,0 +1,14 @@
+name: maxbridge
+version: 1.0.0
+description: >
+  Мост к личному MAX. Отвечает в MAX от твоего имени и подмешивает в ход
+  список MAX-чатов, ждущих ответа. Транспорт PyMax живёт в отдельном
+  sidecar-процессе (maxbridge/.venv), плагин общается с ним по localhost-HTTP.
+author: Саша
+provides_tools:
+  - max_reply
+  - max_pending
+  - max_chats
+  - max_history
+provides_hooks:
+  - pre_llm_call
