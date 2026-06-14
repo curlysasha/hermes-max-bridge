@@ -183,8 +183,17 @@ def max_reply(args: dict, **kwargs) -> str:
 
 
 # ------------------------------- pre_llm_call --------------------------------
-def inject_pending(**kwargs) -> dict | None:
-    """Если есть MAX-сообщения, ждущие ответа — подмешать их в ход агента."""
+def inject_pending(user_message: str = "", **kwargs) -> dict | None:
+    """Подмешать ждущие MAX-чаты в ход агента.
+
+    ВАЖНО: только когда пользователь сам заговорил про MAX/ответ, и БЕЗ
+    императива. Иначе локальная модель, видя список pending + тул на каждом
+    ходу, периодически сама шлёт ответ в MAX вместо ответа в текущем чате.
+    """
+    msg = (user_message or "").lower()
+    triggers = ("макс", "max", "ответь", "ответить", "напиши", "отправь", "перешл")
+    if not any(t in msg for t in triggers):
+        return None  # обычная болтовня — молчим, не соблазняем модель
     try:
         items = _pending_items()
     except Exception:  # noqa: BLE001
@@ -199,8 +208,9 @@ def inject_pending(**kwargs) -> dict | None:
         lines.append(f"  - chat_id={cid} · {label}: «{text}»")
     return {
         "context": (
-            "MAX-сообщения, ждущие твоего ответа. Если пользователь просит "
-            "ответить — используй max_reply(chat_id, text) с нужным chat_id:\n"
+            "Справка по MAX. Вызывай max_reply ТОЛЬКО если пользователь в этом "
+            "сообщении явно просит написать/ответить в MAX. Иначе просто отвечай "
+            "ему в текущем чате и НЕ отправляй ничего в MAX. Ждут ответа в MAX:\n"
             + "\n".join(lines)
         )
     }
