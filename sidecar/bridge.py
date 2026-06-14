@@ -84,6 +84,12 @@ def save_pending(data: dict) -> None:
     )
 
 
+def _attach_type(a) -> str:
+    """Тип вложения строкой в верхнем регистре: PHOTO / CONTROL / VIDEO / ..."""
+    t = getattr(a, "type", None)
+    return str(getattr(t, "value", t) or "").upper()
+
+
 # --------------------------------- сам мост ----------------------------------
 class Bridge:
     def __init__(self, cfg: dict, env: dict[str, str]) -> None:
@@ -187,6 +193,49 @@ class Bridge:
         except Exception as exc:  # noqa: BLE001
             log.error("telegram push failed: %s", exc)
 
+    async def push_telegram_photo(self, photo_url: str, caption: str = "") -> bool:
+        """Отправить фото в Telegram: сперва ссылкой (Telegram заберёт сам),
+        при неудаче — скачать байты (sidecar авторизован в MAX) и залить."""
+        if not (self.tg_token and self.owner_chat):
+            log.error("нет TELEGRAM_BOT_TOKEN/owner — фото не отправить")
+            return False
+        api = f"https://api.telegram.org/bot{self.tg_token}/sendPhoto"
+        assert self._http is not None
+        # 1) отдать ссылку
+        try:
+            payload = {"chat_id": self.owner_chat, "photo": photo_url}
+            if caption:
+                payload["caption"] = caption[:1024]
+            async with self._http.post(api, json=payload) as r:
+                if r.status == 200:
+                    return True
+                log.warning(
+                    "sendPhoto by URL не прошёл (%s: %s) — качаю и заливаю",
+                    r.status, (await r.text())[:200],
+                )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("sendPhoto by URL ошибка (%s) — качаю и заливаю", exc)
+        # 2) фолбэк: скачать и залить multipart
+        try:
+            async with self._http.get(photo_url) as ir:
+                if ir.status != 200:
+                    log.error("не скачать фото из MAX (%s)", ir.status)
+                    return False
+                data = await ir.read()
+            form = aiohttp.FormData()
+            form.add_field("chat_id", str(self.owner_chat))
+            if caption:
+                form.add_field("caption", caption[:1024])
+            form.add_field("photo", data, filename="photo.jpg", content_type="image/jpeg")
+            async with self._http.post(api, data=form) as r2:
+                if r2.status != 200:
+                    log.error("sendPhoto upload не прошёл (%s: %s)", r2.status, (await r2.text())[:200])
+                    return False
+                return True
+        except Exception as exc:  # noqa: BLE001
+            log.error("sendPhoto fallback ошибка: %s", exc)
+            return False
+
     # --- обработка входящего ---
     # PyMax-диспетчер зовёт callback(event, client) → принимаем оба аргумента.
     async def on_message(self, msg, client=None) -> None:
@@ -201,14 +250,38 @@ class Bridge:
             if is_group and not self.notify_groups:
                 return
 
+            attaches = list(getattr(msg, "attaches", None) or [])
+            types = [_attach_type(a) for a in attaches]
+
+            # Служебные события (контакт присоединился/вышел и т.п.) — не пушим.
+            if "CONTROL" in types:
+                return
+
             who = await self.sender_name(msg.sender)
             if is_group and chat is not None:
                 label = f"{who} в «{chat.title or msg.chat_id}»"
             else:
                 label = who
-            body = (msg.text or "").strip() or "[без текста / вложение]"
+            text = (msg.text or "").strip()
+            photos = [a for a in attaches if _attach_type(a) == "PHOTO"]
 
-            await self.push_telegram(f"📨 MAX · {label}:\n{body}")
+            if photos:
+                caption = f"📨 MAX · {label}" + (f":\n{text}" if text else "")
+                for i, ph in enumerate(photos):
+                    url = getattr(ph, "base_url", None)
+                    if url:
+                        await self.push_telegram_photo(url, caption if i == 0 else "")
+                pend_text = text or "[фото]"
+                log.info("→ пуш(фото×%d): %s: %s", len(photos), label, (text or "")[:50])
+            elif text:
+                await self.push_telegram(f"📨 MAX · {label}:\n{text}")
+                pend_text = text
+                log.info("→ пуш: %s: %s", label, text[:60])
+            else:
+                kind = types[0].lower() if types else "вложение"
+                await self.push_telegram(f"📨 MAX · {label}: [{kind}]")
+                pend_text = f"[{kind}]"
+                log.info("→ пуш(%s): %s", kind, label)
 
             pend = load_pending()
             pend[str(msg.chat_id)] = {
@@ -216,11 +289,10 @@ class Bridge:
                 "label": label,
                 "from": who,
                 "from_id": msg.sender,
-                "text": body[:500],
+                "text": pend_text[:500],
                 "time": msg.time,
             }
             save_pending(pend)
-            log.info("→ пуш: %s: %s", label, body[:60])
         except Exception as exc:  # noqa: BLE001
             log.exception("on_message error: %s", exc)
 
