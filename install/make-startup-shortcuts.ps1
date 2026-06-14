@@ -11,12 +11,14 @@ $l1.Description      = 'Hermes Desktop (autostart)'
 $l1.Save()
 Write-Host "ok: $p1"
 
-# 2) Локальная модель Qwen3.6-27B (llama-server), свёрнутым окном
+# 2) Локальная модель Qwen3.6-27B (llama-server) — в Windows Terminal
+$wt = 'C:\Users\user\AppData\Local\Microsoft\WindowsApps\wt.exe'
 $p2 = Join-Path $startup 'Qwen Local Model.lnk'
 $l2 = $ws.CreateShortcut($p2)
-$l2.TargetPath       = 'C:\llama-b9553-bin-win-cuda-12.4-x64\run-qwen36-27b.bat'
+$l2.TargetPath       = $wt
+$l2.Arguments        = '--title "LLM" --suppressApplicationTitle -d "C:\llama-b9553-bin-win-cuda-12.4-x64" cmd /k "C:\llama-b9553-bin-win-cuda-12.4-x64\run-qwen36-27b.bat"'
 $l2.WorkingDirectory = 'C:\llama-b9553-bin-win-cuda-12.4-x64'
-$l2.WindowStyle      = 7   # minimized
-$l2.Description      = 'Qwen3.6-27B local model server (autostart)'
+$l2.WindowStyle      = 1   # обычное окно (видом дальше управляет Windows Terminal)
+$l2.Description      = 'Qwen3.6-27B local model server в Windows Terminal (autostart)'
 $l2.Save()
 Write-Host "ok: $p2"
